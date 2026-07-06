@@ -80,7 +80,7 @@ stages {
         steps {
             dir('frontend') {
                 sh '''
-                    aws s3 sync dist/ s3://${S3_BUCKET} --delete
+                    aws s3 sync build/ s3://${S3_BUCKET} --delete
                 '''
             }
         }
