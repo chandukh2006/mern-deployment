@@ -1,87 +1,118 @@
 pipeline {
 agent any
 
+
 environment {
-    AWS_REGION        = 'ap-south-1'
-    ECR_REPO          = '123456789012.dkr.ecr.ap-south-1.amazonaws.com/todo-backend'
-    IMAGE_TAG         = "${env.BUILD_NUMBER}"
-    S3_BUCKET         = 'www.mydomain.com'
-    CLOUDFRONT_ID     = 'EXXXXXXXXXXXXX'
-    EC2_HOST          = 'ec2-user@<EC2_PUBLIC_IP_OR_DNS>'
-    REACT_APP_API_URL = 'https://api.mydomain.com/api'
+    AWS_REGION = 'us-east-1'
+    ECR_REPO = '530683143872.dkr.ecr.us-east-1.amazonaws.com/mern-backend'
+    BACKEND_HOST = '54.160.66.63'
+    BACKEND_USER = 'ubuntu'
+    S3_BUCKET = 'chandugroup.com'
+    CLOUDFRONT_ID = credentials('cloudfront-distribution-id')
 }
 
 stages {
 
-    stage('Backend: Build & Push to ECR') {
+    stage('Build Backend Docker Image') {
         steps {
             dir('backend') {
-                sh """
-                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPO}
-                    docker build -t ${ECR_REPO}:${IMAGE_TAG} -t ${ECR_REPO}:latest .
-                    docker push ${ECR_REPO}:${IMAGE_TAG}
-                    docker push ${ECR_REPO}:latest
-                """
+                sh '''
+                    docker build -t mern-backend:${BUILD_NUMBER} .
+                    docker tag mern-backend:${BUILD_NUMBER} ${ECR_REPO}:${BUILD_NUMBER}
+                    docker tag mern-backend:${BUILD_NUMBER} ${ECR_REPO}:latest
+                '''
             }
         }
     }
 
-    stage('Backend: Deploy to EC2') {
+    stage('Login to Amazon ECR') {
         steps {
-            sshagent(credentials: ['ec2-ssh-key']) {
-                sh """
-                    ssh -o StrictHostKeyChecking=no ${EC2_HOST} '
-                        aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPO} &&
-                        docker pull ${ECR_REPO}:latest &&
-                        docker stop todo-backend || true &&
-                        docker rm todo-backend || true &&
-                        docker run -d --name todo-backend --restart always -p 5000:5000 \
-                            -e MONGO_URI="${MONGO_URI}" \
-                            ${ECR_REPO}:latest
-                    '
-                """
+            sh '''
+                aws ecr get-login-password --region ${AWS_REGION} | \
+                docker login --username AWS --password-stdin 530683143872.dkr.ecr.us-east-1.amazonaws.com
+            '''
+        }
+    }
+
+    stage('Push Image to ECR') {
+        steps {
+            sh '''
+                docker push ${ECR_REPO}:${BUILD_NUMBER}
+                docker push ${ECR_REPO}:latest
+            '''
+        }
+    }
+
+    stage('Deploy Backend') {
+        steps {
+            sshagent(['backend-ec2-key']) {
+                sh '''
+                    ssh -o StrictHostKeyChecking=no ${BACKEND_USER}@${BACKEND_HOST} << EOF
+
+                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin 530683143872.dkr.ecr.us-east-1.amazonaws.com
+
+                    docker pull ${ECR_REPO}:latest
+
+                    docker stop todo-backend || true
+                    docker rm todo-backend || true
+
+                    docker run -d \
+                      --name todo-backend \
+                      --restart always \
+                      --network mern-network \
+                      -e MONGO_URI=mongodb://mongodb:27017 \
+                      -p 5050:5050 \
+                      ${ECR_REPO}:latest
+
+                    EOF
+                '''
             }
         }
     }
 
-    stage('Frontend: Build') {
+    stage('Build Frontend') {
         steps {
             dir('frontend') {
-                sh """
-                    echo "REACT_APP_API_URL=${REACT_APP_API_URL}" > .env.production
+                sh '''
                     npm install
                     npm run build
-                """
+                '''
             }
         }
     }
 
-    stage('Frontend: Deploy to S3') {
+    stage('Upload Frontend to S3') {
         steps {
             dir('frontend') {
-                sh """
-                    aws s3 sync build/ s3://${S3_BUCKET} --delete
-                """
+                sh '''
+                    aws s3 sync dist/ s3://${S3_BUCKET} --delete
+                '''
             }
         }
     }
 
     stage('Invalidate CloudFront Cache') {
         steps {
-            sh """
-                aws cloudfront create-invalidation --distribution-id ${CLOUDFRONT_ID} --paths "/*"
-            """
+            sh '''
+                aws cloudfront create-invalidation \
+                  --distribution-id ${CLOUDFRONT_ID} \
+                  --paths "/*"
+            '''
         }
     }
 }
 
 post {
     success {
-        echo 'Deployment completed successfully!'
+        echo "=================================="
+        echo "Deployment Successful!"
+        echo "=================================="
     }
 
     failure {
-        echo 'Deployment failed. Check logs above.'
+        echo "=================================="
+        echo "Deployment Failed!"
+        echo "=================================="
     }
 }
 
