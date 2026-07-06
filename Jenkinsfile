@@ -47,24 +47,19 @@ stages {
         steps {
             sshagent(['backend-ec2-key']) {
                 sh '''
-                    ssh -o StrictHostKeyChecking=no ${BACKEND_USER}@${BACKEND_HOST} << EOF
-
-                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin 530683143872.dkr.ecr.us-east-1.amazonaws.com
-
-                    docker pull ${ECR_REPO}:latest
-
-                    docker stop todo-backend || true
-                    docker rm todo-backend || true
-
-                    docker run -d \
-                      --name todo-backend \
-                      --restart always \
-                      --network mern-network \
-                      -e MONGO_URI=mongodb://mongodb:27017 \
-                      -p 5050:5050 \
-                      ${ECR_REPO}:latest
-
-                    EOF
+                    ssh -o StrictHostKeyChecking=no ${BACKEND_USER}@${BACKEND_HOST} "
+                        aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin 530683143872.dkr.ecr.us-east-1.amazonaws.com &&
+                        docker pull ${ECR_REPO}:latest &&
+                        (docker stop todo-backend || true) &&
+                        (docker rm todo-backend || true) &&
+                        docker run -d \
+                          --name todo-backend \
+                          --restart always \
+                          --network mern-network \
+                          -e MONGO_URI=mongodb://mongodb:27017 \
+                          -p 5050:5050 \
+                          ${ECR_REPO}:latest
+                    "
                 '''
             }
         }
