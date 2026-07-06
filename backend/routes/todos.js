@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Todo = require('../models/Todo');
 
-// GET all todos
+// get request from frontend
 router.get('/', async (req, res) => {
   try {
     const todos = await Todo.find().sort({ createdAt: -1 });
