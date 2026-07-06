@@ -1,7 +1,6 @@
 pipeline {
 agent any
 
-```
 environment {
     AWS_REGION        = 'ap-south-1'
     ECR_REPO          = '123456789012.dkr.ecr.ap-south-1.amazonaws.com/todo-backend'
@@ -18,13 +17,8 @@ stages {
         steps {
             dir('backend') {
                 sh """
-                    aws ecr get-login-password --region ${AWS_REGION} | \
-                    docker login --username AWS --password-stdin ${ECR_REPO}
-
-                    docker build \
-                        -t ${ECR_REPO}:${IMAGE_TAG} \
-                        -t ${ECR_REPO}:latest .
-
+                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPO}
+                    docker build -t ${ECR_REPO}:${IMAGE_TAG} -t ${ECR_REPO}:latest .
                     docker push ${ECR_REPO}:${IMAGE_TAG}
                     docker push ${ECR_REPO}:latest
                 """
@@ -37,18 +31,11 @@ stages {
             sshagent(credentials: ['ec2-ssh-key']) {
                 sh """
                     ssh -o StrictHostKeyChecking=no ${EC2_HOST} '
-                        aws ecr get-login-password --region ${AWS_REGION} | \
-                        docker login --username AWS --password-stdin ${ECR_REPO} &&
-
+                        aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPO} &&
                         docker pull ${ECR_REPO}:latest &&
-
-                        docker stop todo-backend || true
-                        docker rm todo-backend || true
-
-                        docker run -d \
-                            --name todo-backend \
-                            --restart always \
-                            -p 5000:5000 \
+                        docker stop todo-backend || true &&
+                        docker rm todo-backend || true &&
+                        docker run -d --name todo-backend --restart always -p 5000:5000 \
                             -e MONGO_URI="${MONGO_URI}" \
                             ${ECR_REPO}:latest
                     '
@@ -62,7 +49,6 @@ stages {
             dir('frontend') {
                 sh """
                     echo "REACT_APP_API_URL=${REACT_APP_API_URL}" > .env.production
-
                     npm install
                     npm run build
                 """
@@ -83,9 +69,7 @@ stages {
     stage('Invalidate CloudFront Cache') {
         steps {
             sh """
-                aws cloudfront create-invalidation \
-                    --distribution-id ${CLOUDFRONT_ID} \
-                    --paths "/*"
+                aws cloudfront create-invalidation --distribution-id ${CLOUDFRONT_ID} --paths "/*"
             """
         }
     }
@@ -100,6 +84,6 @@ post {
         echo 'Deployment failed. Check logs above.'
     }
 }
-```
+
 
 }
